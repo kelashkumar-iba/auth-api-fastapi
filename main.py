@@ -86,17 +86,23 @@ def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
 
-@app.get("/protected/profile", summary="Get Profile (protected)")
-def get_profile(request: Request):
+def extract_token(request: Request):
+    """
+    Pulls the bearer token out of the Authorization header.
+    Returns the token string, or None if it's missing/malformed.
+    """
     auth_header = request.headers.get("Authorization")
 
     if not auth_header or not auth_header.startswith("Bearer "):
-        return JSONResponse(
-            status_code=401,
-            content={"error": "Access token required"}
-        )
+        return None
 
     token = auth_header.replace("Bearer ", "").strip()
+    return token if token else None
+
+
+@app.get("/protected/profile", summary="Get Profile (protected)")
+def get_profile(request: Request):
+    token = extract_token(request)
 
     if not token:
         return JSONResponse(
@@ -104,7 +110,23 @@ def get_profile(request: Request):
             content={"error": "Access token required"}
         )
 
-    # Token exists and is formatted correctly, but we are not verifying it
-    # against Supabase yet -- that's Stage 3. For now this just proves the
-    # header-extraction logic works.
-    return {"message": "Token received, verification comes in Stage 3"}
+    try:
+        user_response = supabase.auth.get_user(token)
+    except Exception:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Invalid or expired token"}
+        )
+
+    if not user_response or not user_response.user:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Invalid or expired token"}
+        )
+
+    user = user_response.user
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": str(user.created_at)
+    }
