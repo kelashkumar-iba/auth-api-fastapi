@@ -1,5 +1,6 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -28,3 +29,53 @@ def root():
         "name": "Auth API",
         "version": "1.0"
     }
+
+
+@app.post("/auth/signup", summary="Sign Up", status_code=201)
+async def signup(request: Request):
+    data = await request.json()
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Email and password are required"}
+        )
+
+    try:
+        result = supabase.auth.sign_up({"email": email, "password": password})
+        return {"user": result.user.model_dump() if result.user else None}
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"error": str(e)}
+        )
+
+
+@app.post("/auth/login", summary="Log In", status_code=200)
+async def login(request: Request):
+    data = await request.json()
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Email and password are required"}
+        )
+
+    try:
+        result = supabase.auth.sign_in_with_password(
+            {"email": email, "password": password}
+        )
+        return {
+            "access_token": result.session.access_token,
+            "refresh_token": result.session.refresh_token,
+            "user": result.user.model_dump() if result.user else None
+        }
+    except Exception:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Invalid login credentials"}
+        )
