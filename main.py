@@ -79,3 +79,32 @@ async def login(request: Request):
             status_code=401,
             content={"error": "Invalid login credentials"}
         )
+
+
+@app.get("/public/info", summary="Public Info")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+
+@app.get("/protected/profile", summary="Get Profile (protected)")
+def get_profile(request: Request):
+    auth_header = request.headers.get("Authorization")
+
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Access token required"}
+        )
+
+    token = auth_header.replace("Bearer ", "").strip()
+
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"error": "Access token required"}
+        )
+
+    # Token exists and is formatted correctly, but we are not verifying it
+    # against Supabase yet -- that's Stage 3. For now this just proves the
+    # header-extraction logic works.
+    return {"message": "Token received, verification comes in Stage 3"}
