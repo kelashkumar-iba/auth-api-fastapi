@@ -2,6 +2,7 @@ import os
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
@@ -17,6 +18,12 @@ app = FastAPI(
     description="A FastAPI service using Supabase Auth for signup, login, and protected routes.",
     version="1.0"
 )
+
+# HTTPBearer is what tells Swagger UI "this API uses bearer tokens" --
+# it's what makes the lock icon and "Authorize" button appear at /docs.
+# auto_error=False lets us return our own custom 401 JSON message instead
+# of FastAPI's default error shape when the header is missing.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @app.on_event("startup")
@@ -88,19 +95,18 @@ def public_info():
 
 
 # ---------------------------------------------------------------------------
-# Auth dependency (this is FastAPI's version of "middleware" for a single
-# route). Any route that adds `token: str = Depends(get_verified_token)`
-# to its parameters automatically gets guarded by this logic BEFORE the
-# route's own code ever runs. Write it once, reuse it everywhere.
+# Auth dependency -- now using FastAPI's HTTPBearer scheme so Swagger UI
+# knows these routes are protected and shows the Authorize padlock.
 # ---------------------------------------------------------------------------
 
-def get_verified_token(request: Request) -> str:
-    auth_header = request.headers.get("Authorization")
-
-    if not auth_header or not auth_header.startswith("Bearer "):
+def get_verified_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+) -> str:
+    if credentials is None or not credentials.credentials:
         raise HTTPException(status_code=401, detail="Access token required")
 
-    token = auth_header.replace("Bearer ", "").strip()
+    token = credentials.credentials.strip()
 
     if not token:
         raise HTTPException(status_code=401, detail="Access token required")
@@ -113,9 +119,6 @@ def get_verified_token(request: Request) -> str:
     if not user_response or not user_response.user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    # Stash the raw token on request.state so routes needing it (like
-    # logout, which must pass the token back to Supabase) can grab it
-    # without re-parsing the header themselves.
     request.state.token = token
     request.state.user = user_response.user
 
@@ -146,8 +149,5 @@ def logout(request: Request, token: str = Depends(get_verified_token)):
     try:
         supabase.auth.sign_out(token)
     except Exception:
-        # Even if Supabase's sign_out call has trouble, the client is
-        # discarding the token client-side anyway -- so we don't fail
-        # the logout over it.
         pass
     return None
